@@ -1,0 +1,9 @@
+gradio>=4.0.0
+pdfplumber
+supabase
+lightrag-hku
+openai
+python-dotenv
+numpy
+tiktoken
+asyncio
