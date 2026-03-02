@@ -80,16 +80,41 @@ This produces coherent, well-structured handbooks exceeding 20,000 words.
 
 ---
 
-## 🔄 System Flow
+## 🔄 System Architecture
 
-```
-PDF Upload → Text Extraction → Chunking → Embedding
-                                              ↓
-                                  Supabase pgvector  +  LightRAG KG
-                                              ↓
-              User Question → Hybrid Retrieval → Grok LLM → Response
-                                              ↓
-                              Handbook: Plan → Write → Compile
+```mermaid
+flowchart TD
+    U(["👤 User"])
+
+    subgraph Gradio["🖥️ Gradio Web Interface"]
+        PU["📄 PDF Upload"]
+        Q["💬 Question Input"]
+        CR["📩 Chat Response"]
+        HB["📚 20k Handbook"]
+    end
+
+    subgraph proc["📦 Processing Pipeline"]
+        PP["🔧 PDF Processing\npdfplumber"]
+        TC["📝 Text Chunks"]
+    end
+
+    subgraph storage["🗄️ Knowledge Storage"]
+        SB[("🟢 Supabase pgvector\nVector Embeddings")]
+        LR[("🟣 LightRAG\nKnowledge Graph")]
+    end
+
+    RAG["🔍 Hybrid RAG Retriever"]
+    LLM["⚡ Grok LLM\nxAI API"]
+
+    U --> PU --> PP --> TC
+    TC --> SB
+    TC --> LR
+    SB --> RAG
+    LR --> RAG
+    U --> Q --> RAG
+    RAG --> LLM
+    LLM --> CR --> U
+    LLM --> HB --> U
 ```
 
 ---
