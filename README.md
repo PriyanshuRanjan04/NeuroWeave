@@ -1,9 +1,109 @@
-# NeuroWeave
+# 🧠 NeuroWeave
 
-NeuroWeave is an AI-powered document intelligence application that allows users to:
-1. Upload PDF documents.
-2. Chat with the system to ask questions about the uploaded content using a Retrieval-Augmented Generation (RAG) pipeline backed by LightRAG and Supabase pgvector.
-3. Request a highly structured, 20,000-word handbook generated iteratively from the PDF content using the xAI Grok API.
+> Upload PDFs. Ask questions. Generate 20,000-word handbooks — all through conversation.
+
+---
+
+## 📌 What is NeuroWeave?
+
+NeuroWeave is an AI-powered document intelligence application. Upload your PDF documents, have contextual conversations about the content, and generate comprehensive 20,000+ word structured handbooks — all through a simple chat interface powered by a hybrid Knowledge Graph + Vector Search RAG pipeline.
+
+No complex UI. No manual summarization. Just upload, ask, and generate.
+
+---
+
+## ✨ Core Features
+
+- 📄 **PDF Upload** — Upload one or multiple PDF files directly in the interface
+- 💬 **Contextual Chat** — Ask questions and get answers grounded in your uploaded documents
+- 📚 **Handbook Generation** — Generate a 20,000+ word structured handbook on any topic in your PDFs
+- 🔗 **Knowledge Graph** — LightRAG builds an entity-relationship graph for deep, smart retrieval
+- ⚡ **Vector Search** — Supabase pgvector powers fast semantic similarity search
+- 📎 **Citations** — Generated handbooks reference content from your uploaded source materials
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Frontend** | Gradio | Chat interface and PDF upload |
+| **PDF Processing** | pdfplumber | Extract and clean text from PDFs |
+| **RAG Engine** | LightRAG | Build knowledge graph from document content |
+| **Vector Database** | Supabase (pgvector) | Store and retrieve document embeddings |
+| **LLM** | Grok 3 / 4 (xAI API) | Power chat responses and handbook generation |
+| **Backend** | Python 3.9+ (async/await) | Core application logic |
+| **Config** | python-dotenv | Manage API keys and environment variables |
+
+---
+
+## 📁 Project Structure
+
+```
+NeuroWeave/
+├── app.py                        # 🚀 Main entry point — launches the Gradio UI
+├── config.py                     # ⚙️  Loads and validates environment variables
+├── requirements.txt              # 📦 Project dependencies
+├── .env                          # 🔐 Your API keys (never commit this)
+├── .env.example                  # 📋 Template showing required environment variables
+├── README.md                     # 📖 Project documentation
+│
+├── pdf_processing/
+│   └── extractor.py              # Handles PDF upload, text extraction and chunking
+│
+├── rag/
+│   ├── lightrag_client.py        # Sets up LightRAG and builds knowledge graph
+│   └── retriever.py              # Queries the knowledge graph for relevant context
+│
+├── database/
+│   └── supabase_client.py        # Manages Supabase connection and vector operations
+│
+├── llm/
+│   ├── grok_client.py            # Wrapper for Grok API calls (chat, stream, embed)
+│   └── handbook_generator.py     # Orchestrates 20,000-word handbook generation
+│
+└── utils/
+    └── helpers.py                # Shared utilities — text cleaning, chunking
+```
+
+---
+
+## 🧠 How Handbook Generation Works
+
+Standard LLMs struggle to generate very long documents in a single pass. NeuroWeave uses the **LongWriter / AgentWrite** technique:
+
+1. **Plan** — Generate a full outline with 10–12 sections, each with a target word count (1,500–2,500 words)
+2. **Write** — Generate each section individually using context retrieved from the knowledge graph
+3. **Compile** — Assemble all sections into a structured document with a table of contents, executive summary, and references
+
+This produces coherent, well-structured handbooks exceeding 20,000 words.
+
+---
+
+## 🔄 System Flow
+
+```
+PDF Upload → Text Extraction → Chunking → Embedding
+                                              ↓
+                                  Supabase pgvector  +  LightRAG KG
+                                              ↓
+              User Question → Hybrid Retrieval → Grok LLM → Response
+                                              ↓
+                              Handbook: Plan → Write → Compile
+```
+
+---
+
+## 🔑 Environment Variables
+
+Before running the app, you will need:
+
+| Variable | Description |
+|---|---|
+| `GROK_API_KEY` | Your xAI API key for Grok |
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_KEY` | Your Supabase anon/public key |
+| `LIGHTRAG_WORKING_DIR` | Local folder path for LightRAG graph storage |
 
 ---
 
