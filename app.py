@@ -12,7 +12,7 @@ from pdf_processing.extractor import process_multiple_pdfs
 from rag.lightrag_client import index_document, get_graph_stats
 from rag.retriever import query
 from database.supabase_client import store_chunks, similarity_search
-from llm.grok_client import chat, embed
+from llm.grok_client import chat, embed, stream_chat
 from llm.handbook_generator import generate_handbook
 
 logging.basicConfig(level=logging.INFO)
@@ -73,43 +73,58 @@ def get_graph_stats_str():
 
 async def chat_handler(message, history):
     if not message:
-        return ""
-        
+        yield ""
+        return
+
     # 1. Retrieve context
     logger.info(f"Retrieving context for: {message}")
     context = await query(message, mode="hybrid")
-    
+
     # 2. Build prompt
     system_prompt = (
-        "You are an AI assistant for NeuroWeave, answering questions based on uploaded documents. "
-        "Use the provided context to answer the user's question accurately. "
-        "Cite the context where applicable."
+        "You are an AI assistant for NeuroWeave, answering questions "
+        "based on uploaded documents. Use the provided context to answer "
+        "accurately. Cite the context where applicable."
     )
-    
-    user_prompt = f"Context:\n{context}\n\nQuestion:\n{message}"
-    
-    # 3. Generate response
-    messages = [{"role": "user", "content": user_prompt}]
-    response = await chat(messages, system_prompt=system_prompt)
-    
-    # Append sources reference simply
-    if "Error" not in response:
-        response += "\n\n*(Sourced from Knowledge Graph & Vector DB)*"
-    return response
 
-async def handle_handbook(topic, progress=gr.Progress()):
+    user_prompt = f"Context:\n{context}\n\nQuestion:\n{message}"
+    messages = [{"role": "user", "content": user_prompt}]
+
+    # 3. Stream response token by token
+    partial = ""
+    async for chunk in stream_chat(messages, system_prompt=system_prompt):
+        partial += chunk
+        yield partial
+
+async def handle_handbook(topic, temperature, max_length, progress=gr.Progress()):
     if not topic:
-        return "Please enter a topic for the handbook."
-        
+        return "Please enter a topic.", "Word count: 0", None
+
     def update_fn(msg):
-        # Progress accepts a float (0-1) or None for indeterminate animations
         progress(None, desc=msg)
-        
+
     # Gather broad context about topic
-    global_context = await query(f"Provide a comprehensive overview of {topic}", mode="global")
-    
-    handbook_content = await generate_handbook(topic, global_context, update_fn=update_fn)
-    return handbook_content
+    global_context = await query(
+        f"Provide a comprehensive overview of {topic}",
+        mode="global"
+    )
+
+    result = await generate_handbook(topic, global_context, update_fn=update_fn)
+
+    # Handle both string and dict return types
+    if isinstance(result, dict):
+        content = result.get("content", str(result))
+        word_count = result.get("word_count", len(content.split()))
+    else:
+        content = result
+        word_count = len(content.split())
+
+    # Save to temp file for download
+    download_path = "handbook_output.md"
+    with open(download_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return content, f"📊 Word Count: {word_count:,} words", download_path
 
 # --- Gradio UI Layout ---
 theme = gr.themes.Soft(
@@ -123,8 +138,11 @@ theme = gr.themes.Soft(
 )
 
 with gr.Blocks(title="NeuroWeave") as demo:
-    gr.Markdown("# 🧠 NeuroWeave")
-    gr.Markdown("AI-Powered Document Intelligence & Handbook Generator")
+    gr.Markdown("""
+# 🧠 NeuroWeave
+### AI-Powered Document Intelligence & Handbook Generator
+> Upload PDFs → Chat with your documents → Generate 20,000-word handbooks
+""")
     
     valid_conf = validate_config()
     if not valid_conf:
@@ -152,21 +170,65 @@ with gr.Blocks(title="NeuroWeave") as demo:
             chat_interface = gr.ChatInterface(
                 fn=chat_handler,
                 title="NeuroWeave Chat",
-                description="Ask questions about your uploaded documents."
+                description="Ask questions about your uploaded documents.",
+                examples=[
+                    "What are the main topics in the uploaded documents?",
+                    "Summarize the key findings",
+                    "What methodology was used?"
+                ]
             )
             
         # Tab 3: Handbook Generation
         with gr.Tab("3. Generate Handbook"):
-            gr.Markdown("Generate a highly structured, 20,000-word handbook based on the uploaded documents.")
-            topic_input = gr.Textbox(label="Handbook Topic / Main Subject")
-            generate_btn = gr.Button("Generate Handbook (This will take time)", variant="primary")
-            handbook_output = gr.Markdown(label="Generated Handbook will appear here.")
-            
+            gr.Markdown("## 📚 Generate 20,000-Word Handbook")
+            gr.Markdown("Generate a highly structured handbook based on uploaded documents.")
+
+            with gr.Row():
+                with gr.Column(scale=3):
+                    topic_input = gr.Textbox(
+                        label="Handbook Topic",
+                        placeholder="e.g. Retrieval Augmented Generation",
+                        lines=2
+                    )
+                with gr.Column(scale=1):
+                    temp_slider = gr.Slider(
+                        0.1, 1.0, value=0.7, step=0.1,
+                        label="Temperature",
+                        interactive=True
+                    )
+                    max_len_slider = gr.Slider(
+                        5000, 32000, value=20000, step=1000,
+                        label="Target Length (words)",
+                        interactive=True
+                    )
+
+            generate_btn = gr.Button(
+                "🚀 Generate Handbook",
+                variant="primary",
+                size="lg"
+            )
+
+            word_count_display = gr.Textbox(
+                label="Generation Stats",
+                interactive=False,
+                value="Word count will appear here after generation"
+            )
+
+            handbook_output = gr.Markdown(label="Generated Handbook")
+
+            download_btn = gr.File(label="📥 Download Handbook (.md)")
+
             generate_btn.click(
                 fn=handle_handbook,
-                inputs=[topic_input],
-                outputs=[handbook_output]
+                inputs=[topic_input, temp_slider, max_len_slider],
+                outputs=[handbook_output, word_count_display, download_btn]
             )
+
+    with gr.Row():
+        gr.Markdown(
+            "Built with Gradio · LightRAG · Supabase · Groq API | "
+            "LongWriter AgentWrite Technique"
+        )
 
 if __name__ == "__main__":
     demo.launch(theme=theme)

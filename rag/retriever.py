@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import asyncio
 from lightrag import QueryParam
 
 # Add project root to path
@@ -19,13 +18,10 @@ async def query(question: str, mode: str = "hybrid") -> str:
         return "Error: LightRAG system is not initialized."
         
     try:
-        def query_sync():
-            return rag.query(
-                question,
-                param=QueryParam(mode=mode)
-            )
-            
-        response = await asyncio.to_thread(query_sync)
+        response = await rag.aquery(
+            question,
+            param=QueryParam(mode=mode)
+        )
         return response
     except Exception as e:
         logger.error(f"Error querying LightRAG: {str(e)}")
