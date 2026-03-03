@@ -122,7 +122,7 @@ theme = gr.themes.Soft(
     block_background_fill="*neutral_900",
 )
 
-with gr.Blocks(theme=theme, title="NeuroWeave") as demo:
+with gr.Blocks(title="NeuroWeave") as demo:
     gr.Markdown("# 🧠 NeuroWeave")
     gr.Markdown("AI-Powered Document Intelligence & Handbook Generator")
     
@@ -152,8 +152,7 @@ with gr.Blocks(theme=theme, title="NeuroWeave") as demo:
             chat_interface = gr.ChatInterface(
                 fn=chat_handler,
                 title="NeuroWeave Chat",
-                description="Ask questions about your uploaded documents.",
-                theme=theme
+                description="Ask questions about your uploaded documents."
             )
             
         # Tab 3: Handbook Generation
@@ -170,4 +169,4 @@ with gr.Blocks(theme=theme, title="NeuroWeave") as demo:
             )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(theme=theme)
