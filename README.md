@@ -31,7 +31,7 @@ No complex UI. No manual summarization. Just upload, ask, and generate.
 | **PDF Processing** | pdfplumber | Extract and clean text from PDFs |
 | **RAG Engine** | LightRAG | Build knowledge graph from document content |
 | **Vector Database** | Supabase (pgvector) | Store and retrieve document embeddings |
-| **LLM** | Grok 3 / 4 (xAI API) | Power chat responses and handbook generation |
+| **LLM** | Groq (dev) / Grok xAI (recommended) | Power chat responses and handbook generation |
 | **Backend** | Python 3.9+ (async/await) | Core application logic |
 | **Config** | python-dotenv | Manage API keys and environment variables |
 
@@ -104,7 +104,7 @@ flowchart TD
     end
 
     RAG["🔍 Hybrid RAG Retriever"]
-    LLM["⚡ Grok LLM\nxAI API"]
+    LLM["⚡ LLM\n(Groq / Grok)"]
 
     U --> PU --> PP --> TC
     TC --> SB
@@ -123,12 +123,14 @@ flowchart TD
 
 Before running the app, you will need:
 
-| Variable | Description |
-|---|---|
-| `GROK_API_KEY` | Your xAI API key for Grok |
-| `SUPABASE_URL` | Your Supabase project URL |
-| `SUPABASE_KEY` | Your Supabase anon/public key |
-| `LIGHTRAG_WORKING_DIR` | Local folder path for LightRAG graph storage |
+| Variable | Required | Description |
+|---|---|---|
+| `LLM_PROVIDER` | No | `groq` (default) or `grok` — selects which LLM backend to use |
+| `GROQ_API_KEY` | When `LLM_PROVIDER=groq` | Free API key from [console.groq.com](https://console.groq.com) |
+| `GROK_API_KEY` | When `LLM_PROVIDER=grok` | Paid API key from [console.x.ai](https://console.x.ai) |
+| `SUPABASE_URL` | Yes | Your Supabase project URL |
+| `SUPABASE_KEY` | Yes | Your Supabase anon/public key |
+| `LIGHTRAG_WORKING_DIR` | No | Local folder path for LightRAG graph storage (default: `./lightrag_storage`) |
 
 ---
 
@@ -147,18 +149,40 @@ Ensure you have Python 3.9+ installed. Install the required packages via `pip`:
 pip install -r requirements.txt
 ```
 
-### 3. Configure API Keys
-Copy the provided `.env.example` file to create a standard `.env` file:
-```bash
-cp .env.example .env
+### 3. Choose Your LLM Provider
+
+NeuroWeave supports two LLM backends. Set `LLM_PROVIDER` in your `.env` to choose:
+
+| | **Groq** *(used during development)* | **Grok / xAI** *(recommended)* |
+|---|---|---|
+| **Provider** | Groq Inc. | xAI (Elon Musk) |
+| **Model** | `llama-3.3-70b-versatile` | `grok-3` |
+| **Cost** | ✅ Free tier available | 💳 Paid |
+| **Speed** | ⚡ Very fast (Groq hardware) | Fast |
+| **Quality** | Great | Best (native reasoning) |
+| **Get key** | [console.groq.com](https://console.groq.com) | [console.x.ai](https://console.x.ai) |
+
+In your `.env` file:
+
+```env
+# To use Groq (free, default):
+LLM_PROVIDER=groq
+GROQ_API_KEY=your_groq_api_key_here
+
+# To use Grok / xAI (recommended for best quality):
+LLM_PROVIDER=grok
+GROK_API_KEY=your_grok_api_key_here
 ```
-Open the `.env` file and fill in your credentials:
-- `GROK_API_KEY`: Your xAI Grok API key.
+
+> **Tip:** You only need the key for whichever provider you select. You can switch at any time by changing `LLM_PROVIDER` and restarting the app.
+
+### 4. Configure remaining credentials
+Open the `.env` file and fill in your other credentials:
 - `SUPABASE_URL`: Your Supabase PostgreSQL database URL.
 - `SUPABASE_KEY`: Your Supabase Anon public key.
 - `LIGHTRAG_WORKING_DIR`: (Optional) Local folder for LightRAG graph storage. Defaults to `./lightrag_storage`.
 
-### 4. Run Supabase SQL
+### 5. Run Supabase SQL
 NeuroWeave utilizes `pgvector` for similarity search. Navigate to the SQL Editor in your Supabase dashboard and run the following commands:
 
 ```sql
@@ -203,7 +227,7 @@ AS $$
 $$;
 ```
 
-### 5. Run the Application
+### 6. Run the Application
 Finally, start the Gradio UI application:
 ```bash
 python app.py

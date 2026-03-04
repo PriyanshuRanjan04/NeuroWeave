@@ -14,25 +14,27 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------------
-# Configuration
+# Configuration — reads from config.py so the provider is driven
+# entirely by the LLM_PROVIDER environment variable.
 # -------------------------------------------------------------------
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+from config import ACTIVE_API_KEY, ACTIVE_MODEL, ACTIVE_BASE_URL, LLM_PROVIDER
 
-# Embedding fallback via sentence-transformers (Groq does not serve embeddings)
+# Embedding fallback via sentence-transformers (neither Groq nor Grok serve embeddings)
 _SENTENCE_MODEL = None  # lazy-loaded
 
-if not GROQ_API_KEY:
-    logger.warning("GROQ_API_KEY is not set. Groq calls will fail.")
+if not ACTIVE_API_KEY:
+    logger.warning(
+        f"{LLM_PROVIDER.upper()}_API_KEY is not set. "
+        "LLM calls will fail — set the correct key in your .env file."
+    )
 
-# Initialize the OpenAI-compatible Groq client
+# Initialize the OpenAI-compatible client (works for both Groq and Grok)
 client = OpenAI(
-    api_key=GROQ_API_KEY or "not-set",
-    base_url=GROQ_BASE_URL,
+    api_key=ACTIVE_API_KEY or "not-set",
+    base_url=ACTIVE_BASE_URL,
 )
 
-logger.info("xAI (Grok) client initialized successfully.")
+logger.info(f"LLM client initialised — provider: {LLM_PROVIDER.upper()}  model: {ACTIVE_MODEL}")
 
 
 # -------------------------------------------------------------------
@@ -55,7 +57,7 @@ async def chat(
     temperature: float = 0.7
 ) -> str:
     """
-    Send messages to Groq and return the response text.
+    Send messages to the configured LLM provider and return the response text.
 
     Args:
         messages:      List of {"role": ..., "content": ...} dicts
@@ -68,7 +70,7 @@ async def chat(
     full_messages = _build_messages(messages, system_prompt)
     try:
         response = client.chat.completions.create(
-            model=GROQ_MODEL,
+            model=ACTIVE_MODEL,
             messages=full_messages,
             temperature=temperature,
         )
@@ -78,14 +80,13 @@ async def chat(
         err = str(e)
         if "429" in err or "rate_limit" in err.lower() or "tokens per day" in err.lower():
             msg = (
-                "⚠️ **Groq daily token limit reached.** "
-                "Please wait ~2 hours for the quota to reset, or swap in a new "
-                "`GROQ_API_KEY` in your `.env` file and restart the app."
+                f"⚠️ **{LLM_PROVIDER.upper()} daily token/rate limit reached.** "
+                "Please wait and retry, or swap in a new API key in your `.env` file and restart the app."
             )
-            logger.warning(f"Groq 429 rate limit hit: {e}")
+            logger.warning(f"{LLM_PROVIDER.upper()} 429 rate limit hit: {e}")
             return msg
-        logger.error(f"Error connecting to Groq API: {e}")
-        return f"Error connecting to Groq API: {e}"
+        logger.error(f"Error connecting to {LLM_PROVIDER.upper()} API: {e}")
+        return f"Error connecting to {LLM_PROVIDER.upper()} API: {e}"
 
 
 async def stream_chat(
@@ -101,7 +102,7 @@ async def stream_chat(
     full_messages = _build_messages(messages, system_prompt)
     try:
         stream = client.chat.completions.create(
-            model=GROQ_MODEL,
+            model=ACTIVE_MODEL,
             messages=full_messages,
             stream=True,
         )
@@ -112,14 +113,13 @@ async def stream_chat(
     except Exception as e:
         err = str(e)
         if "429" in err or "rate_limit" in err.lower() or "tokens per day" in err.lower():
-            logger.warning(f"Groq 429 rate limit hit during streaming: {e}")
+            logger.warning(f"{LLM_PROVIDER.upper()} 429 rate limit hit during streaming: {e}")
             yield (
-                "⚠️ **Groq daily token limit reached.** "
-                "Please wait ~2 hours for the quota to reset, or swap in a new "
-                "`GROQ_API_KEY` in your `.env` file and restart the app."
+                f"⚠️ **{LLM_PROVIDER.upper()} rate limit reached.** "
+                "Please wait and retry, or swap in a new API key in your `.env` file and restart the app."
             )
         else:
-            logger.error(f"Error during Groq streaming: {e}")
+            logger.error(f"Error during {LLM_PROVIDER.upper()} streaming: {e}")
             yield f"⚠️ Error during streaming: {e}"
 
 
@@ -127,7 +127,7 @@ async def embed(text: str) -> List[float]:
     """
     Generate a text embedding vector.
 
-    Groq does not provide an embedding endpoint, so we use
+    Neither Groq nor Grok provide an embedding endpoint, so we use
     sentence-transformers as a local fallback (model: all-MiniLM-L6-v2,
     output dimension: 384, padded to 1536 to match Supabase table schema).
 
@@ -159,21 +159,21 @@ async def embed(text: str) -> List[float]:
 
 async def test_connection() -> bool:
     """
-    Send a simple message to Groq to verify the API key is working.
+    Send a simple message to verify the API key and provider are working.
 
     Returns:
         True if the connection succeeds, False otherwise.
     """
     try:
         response = client.chat.completions.create(
-            model=GROQ_MODEL,
+            model=ACTIVE_MODEL,
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=5,
         )
         _ = response.choices[0].message.content
         return True
     except Exception as e:
-        logger.error(f"Groq connection test failed: {e}")
+        logger.error(f"{LLM_PROVIDER.upper()} connection test failed: {e}")
         return False
 
 
@@ -184,11 +184,14 @@ if __name__ == "__main__":
     import asyncio
 
     async def _run_test():
-        print("Testing Groq API connection...")
+        print(f"Testing {LLM_PROVIDER.upper()} API connection (model: {ACTIVE_MODEL})...")
         success = await test_connection()
         if success:
-            print("Groq connection successful ✅")
+            print(f"{LLM_PROVIDER.upper()} connection successful ✅")
         else:
-            print("Groq connection failed ❌ — check your GROQ_API_KEY in .env")
+            print(
+                f"{LLM_PROVIDER.upper()} connection failed ❌ — "
+                f"check your {'GROK' if LLM_PROVIDER == 'grok' else 'GROQ'}_API_KEY in .env"
+            )
 
     asyncio.run(_run_test())
