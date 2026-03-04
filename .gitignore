@@ -46,3 +46,13 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# ============================
+# Session Notes (Private)
+# ============================
+notes/
+
+# ============================
+# Generated output files
+# ============================
+handbook_output.md

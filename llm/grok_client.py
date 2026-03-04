@@ -75,9 +75,17 @@ async def chat(
         text = response.choices[0].message.content or ""
         return text
     except Exception as e:
-        error_msg = f"Error connecting to Grok API: {e}"
-        logger.error(error_msg)
-        return error_msg
+        err = str(e)
+        if "429" in err or "rate_limit" in err.lower() or "tokens per day" in err.lower():
+            msg = (
+                "⚠️ **Groq daily token limit reached.** "
+                "Please wait ~2 hours for the quota to reset, or swap in a new "
+                "`GROQ_API_KEY` in your `.env` file and restart the app."
+            )
+            logger.warning(f"Groq 429 rate limit hit: {e}")
+            return msg
+        logger.error(f"Error connecting to Groq API: {e}")
+        return f"Error connecting to Groq API: {e}"
 
 
 async def stream_chat(
@@ -102,9 +110,17 @@ async def stream_chat(
             if delta:
                 yield delta
     except Exception as e:
-        error_msg = f"Error during Groq streaming: {e}"
-        logger.error(error_msg)
-        yield error_msg
+        err = str(e)
+        if "429" in err or "rate_limit" in err.lower() or "tokens per day" in err.lower():
+            logger.warning(f"Groq 429 rate limit hit during streaming: {e}")
+            yield (
+                "⚠️ **Groq daily token limit reached.** "
+                "Please wait ~2 hours for the quota to reset, or swap in a new "
+                "`GROQ_API_KEY` in your `.env` file and restart the app."
+            )
+        else:
+            logger.error(f"Error during Groq streaming: {e}")
+            yield f"⚠️ Error during streaming: {e}"
 
 
 async def embed(text: str) -> List[float]:

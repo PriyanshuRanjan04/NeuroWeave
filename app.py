@@ -21,48 +21,67 @@ logger = logging.getLogger(__name__)
 async def handle_pdfs(files, progress=gr.Progress()):
     if not files:
         return "Please upload at least one PDF.", get_graph_stats_str()
-        
+
     progress(0, desc="Extracting text from PDFs...")
     file_paths = [f.name for f in files]
-    
-    # Extract
+
+    # Extract text + chunks from all PDFs (fast — pure Python)
     results = process_multiple_pdfs(file_paths)
-    
+
     total_chunks = 0
     failed_files = []
-    
-    progress(0.2, desc="Processing into Database & Knowledge Graph...")
+    docs_for_rag: list = []   # collected for background graph indexing
+
+    progress(0.2, desc="Embedding & storing chunks in vector database...")
     for i, res in enumerate(results):
         if "error" in res:
             failed_files.append(f"{res['filename']} ({res['error']})")
             continue
-            
-        progress(0.2 + 0.6 * (i / len(results)), desc=f"Indexing {res['filename']}...")
-        
-        # 1. RAG Knowledge Graph Indexing
-        combined_text = " ".join(res["chunks"])
+
+        progress(0.2 + 0.6 * (i / len(results)), desc=f"Storing {res['filename']}...")
+
+        chunks = res.get("chunks", [])
+        combined_text = " ".join(chunks)
+
+        # ── Step 1: Supabase vector store (fast, ~5 s) ──────────────────
+        if chunks:
+            embeddings = []
+            for chunk in chunks:
+                emb = await embed(chunk)
+                if not emb:
+                    emb = [0.0] * 1536
+                embeddings.append(emb)
+            await store_chunks(res["filename"], chunks, embeddings)
+            total_chunks += len(chunks)
+
+        # ── Step 2: Queue for background LightRAG graph indexing ─────────
         if combined_text.strip():
-            await index_document(combined_text, res["filename"])
-            
-            # 2. Vector Store Indexing (Supabase)
-            chunks = res["chunks"]
-            if chunks:
-                embeddings = []
-                for chunk in chunks:
-                    emb = await embed(chunk)
-                    if not emb:
-                        emb = [0.0] * 1536 # Fallback empty embedding
-                    embeddings.append(emb)
-                    
-                await store_chunks(res["filename"], chunks, embeddings)
-                total_chunks += len(chunks)
-            
-    progress(1.0, desc="Done!")
-    
-    msg = f"Processed {len(results) - len(failed_files)} PDFs successfully. Indexed {total_chunks} chunks."
+            docs_for_rag.append((combined_text, res["filename"]))
+
+    # Fire-and-forget: knowledge graph building runs in background.
+    # Chat can already answer via Supabase fallback while this processes.
+    async def _background_rag():
+        for text, fname in docs_for_rag:
+            try:
+                await index_document(text, fname)
+                logger.info(f"Background RAG indexing complete: {fname}")
+            except Exception as e:
+                logger.error(f"Background RAG indexing failed for {fname}: {e}")
+
+    if docs_for_rag:
+        asyncio.create_task(_background_rag())
+        logger.info(f"Started background knowledge-graph indexing for {len(docs_for_rag)} doc(s).")
+
+    progress(1.0, desc="Done! Knowledge graph building in background...")
+
+    msg = (
+        f"✅ Processed {len(results) - len(failed_files)} PDF(s) — "
+        f"{total_chunks} chunks stored. You can chat now!\n"
+        f"⏳ Knowledge graph is building in the background (may take a few minutes)."
+    )
     if failed_files:
-        msg += f"\nFailed: {', '.join(failed_files)}"
-        
+        msg += f"\n❌ Failed: {', '.join(failed_files)}"
+
     return msg, get_graph_stats_str()
 
 def get_graph_stats_str():
@@ -76,15 +95,39 @@ async def chat_handler(message, history):
         yield ""
         return
 
-    # 1. Retrieve context
+    # 1. Retrieve context — try LightRAG knowledge graph first
     logger.info(f"Retrieving context for: {message}")
     context = await query(message, mode="hybrid")
+
+    # Guard: LightRAG aquery() returns None or unhelpful strings when the
+    # knowledge graph is empty / still building. Fall back to Supabase
+    # vector search to serve raw document chunks in that case.
+    _EMPTY_SIGNALS = {"", "none", "no information found", "no context"}
+    if not context or str(context).strip().lower() in _EMPTY_SIGNALS:
+        logger.info("LightRAG returned no context — falling back to Supabase vector search.")
+        try:
+            query_emb = await embed(message)
+            if query_emb:
+                hits = await similarity_search(query_emb, limit=6)
+                if hits:
+                    chunks = [h["content"] for h in hits if h.get("content")]
+                    context = "\n\n---\n\n".join(chunks)
+                    logger.info(f"Supabase fallback returned {len(chunks)} chunks.")
+        except Exception as emb_err:
+            logger.warning(f"Supabase fallback failed: {emb_err}")
+
+    # Final safety net
+    if not context or not str(context).strip():
+        context = (
+            "No document context is available yet. "
+            "Please upload and process a PDF in the 'Upload Documents' tab first."
+        )
 
     # 2. Build prompt
     system_prompt = (
         "You are an AI assistant for NeuroWeave, answering questions "
         "based on uploaded documents. Use the provided context to answer "
-        "accurately. Cite the context where applicable."
+        "accurately. If the context is insufficient, say so clearly."
     )
 
     user_prompt = f"Context:\n{context}\n\nQuestion:\n{message}"

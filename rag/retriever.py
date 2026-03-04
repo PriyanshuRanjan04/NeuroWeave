@@ -22,7 +22,8 @@ async def query(question: str, mode: str = "hybrid") -> str:
             question,
             param=QueryParam(mode=mode)
         )
-        return response
+        # aquery() can return None when the graph is empty / still indexing
+        return response or ""
     except Exception as e:
         logger.error(f"Error querying LightRAG: {str(e)}")
-        return f"Retrieval failed due to an error: {str(e)}"
+        return ""
